@@ -208,3 +208,58 @@ Wait for consent; never auto-create ADRs. Group related decisions (stacks, authe
 
 ## Code Standards
 See `.specify/memory/constitution.md` for code quality, testing, performance, security, and architecture principles.
+
+---
+
+## Smart Personal Chief of Staff - Project Architecture
+
+### Overview
+This is a CLI task management application built with Python 3.13+, using Click for CLI commands and Rich for formatted output.
+
+### File Locations
+
+```
+src/chief_of_staff/
+├── __init__.py           # Package init, version
+├── main.py               # Entry point, dependency wiring
+├── models/
+│   ├── __init__.py       # Exports Task
+│   └── task.py           # Task dataclass with validation
+├── storage/
+│   ├── __init__.py       # Exports MemoryStore, TaskNotFoundException
+│   ├── exceptions.py     # TaskNotFoundException
+│   └── memory_store.py   # In-memory CRUD operations
+├── services/
+│   ├── __init__.py       # Exports TaskService, ValidationError, TaskNotFoundError
+│   ├── exceptions.py     # ValidationError, TaskNotFoundError
+│   └── task_service.py   # Business logic, validation
+└── cli/
+    ├── __init__.py       # Exports create_cli, display functions
+    ├── display.py        # Rich table and message formatting
+    └── commands.py       # Click CLI commands
+```
+
+### Architecture Patterns
+
+1. **Layered Architecture**: models -> storage -> services -> cli -> main
+2. **Dependency Injection**: Storage injected into Service, Service injected into CLI
+3. **Exception Translation**: Storage exceptions wrapped as Service exceptions
+4. **Factory Pattern**: `create_cli(task_service)` creates CLI with injected service
+
+### Key Commands
+
+```bash
+uv run chief add "Task title" -d "description"
+uv run chief list
+uv run chief complete <task-id>
+uv run chief incomplete <task-id>
+uv run chief update <task-id> -t "New title" -d "New description"
+uv run chief delete <task-id>
+```
+
+### Development Notes
+
+- Phase I uses in-memory storage (resets between invocations)
+- ASCII table box style for cross-platform Windows compatibility
+- Task IDs are UUID4, displayed as first 8 characters
+- Exit code 1 for validation/not-found errors
