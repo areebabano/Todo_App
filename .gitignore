@@ -51,3 +51,37 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Node.js/Next.js
+node_modules/
+dist/
+build/
+*.log
+.env*
+.next/
+out/
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.hypothesis/
+
+# Secrets
+secrets/
+*.key
+*.pem
+*.crt
+*.cert
+*.jks
+*.keystore
