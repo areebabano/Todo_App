@@ -6,6 +6,7 @@ export default function AuthIllustration() {
   return (
     <div className="relative w-full max-w-lg mx-auto">
       {/* Floating colored blobs */}
+      {/* commit */}
       <motion.div
         animate={{ x: [0, 15, 0], y: [0, -20, 0] }}
         transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
