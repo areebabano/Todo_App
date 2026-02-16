@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const protectedRoutes = ["/tasks", "/profile"];
+const protectedRoutes = ["/tasks", "/profile", "/chat"];
 const authRoutes = ["/login", "/signup"];
 
 export function middleware(request: NextRequest) {

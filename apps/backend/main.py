@@ -9,11 +9,14 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 from fastapi import FastAPI
-from apps.backend.api.v1.endpoints import auth, tasks
+from apps.backend.api.v1.endpoints import auth, tasks, chat
 from apps.backend.core.errors import register_error_handlers
 from apps.backend.core.cors import configure_cors
 from apps.backend.core.middleware import add_security_middleware
 from apps.backend.core.rate_limiter import init_rate_limiter
+from apps.backend.mcp.server import mcp
+from apps.backend.services.chat_service import TodoStore, TodoChatKitServer
+from apps.backend.api.v1.endpoints.chat import set_chatkit_server
 
 app = FastAPI(
     title="Todo Web Application API",
@@ -28,6 +31,15 @@ register_error_handlers(app)
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(tasks.router, prefix="/api/v1")
+app.include_router(chat.router, prefix="/api/v1")
+
+# Initialize ChatKit server with DB-backed store
+_todo_store = TodoStore()
+_chatkit_server = TodoChatKitServer(store=_todo_store)
+set_chatkit_server(_chatkit_server)
+
+# Mount MCP server (Streamable HTTP transport) for AI agent tool access
+app.mount("/mcp", mcp.http_app())
 
 
 @app.get("/")

@@ -11,8 +11,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 from dotenv import load_dotenv
 load_dotenv()
 
-# Only import Task model - Better Auth owns the user table
+# Import all SQLModel models so Alembic detects them
+# Better Auth owns the user table — only app models here
 from db.models.task_model import Task
+from db.models.conversation_model import Conversation
+from db.models.message_model import Message
 
 config = context.config
 
