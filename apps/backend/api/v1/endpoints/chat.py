@@ -1,62 +1,57 @@
-"""Chat endpoint that bridges FastAPI with the ChatKit protocol.
+"""Chat endpoints with SSE streaming.
 
-Accepts raw ChatKit requests, authenticates the user via Better Auth
-session token, and delegates to ``TodoChatKitServer.process()``.
-Streaming responses are returned as Server-Sent Events.
+Provides a simple streaming chat API that replaces the ChatKit protocol.
 """
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from apps.backend.api.v1.schemas.chat import ChatMessageRequest
 from apps.backend.core.security import verify_session_token
+from apps.backend.services.chat_stream_service import (
+    stream_chat_response,
+    get_conversations,
+    get_messages,
+)
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
-# Lazy-initialized server instance (set by main.py on startup)
-_chatkit_server = None
 
-
-def set_chatkit_server(server) -> None:
-    """Called during app startup to inject the ChatKit server instance."""
-    global _chatkit_server
-    _chatkit_server = server
-
-
-def _get_server():
-    if _chatkit_server is None:
-        raise RuntimeError("ChatKit server not initialized")
-    return _chatkit_server
-
-
-@router.post("")
-@router.post("/")
-async def chat_handler(
-    request: Request,
+@router.post("/stream")
+async def chat_stream(
+    body: ChatMessageRequest,
     current_user_id: str = Depends(verify_session_token),
 ):
-    """Handle all ChatKit protocol requests.
-
-    The ChatKit SDK sends JSON requests to a single endpoint. The server
-    parses the request type internally and routes to the correct handler
-    (create thread, add message, list threads, etc.).
-    """
-    body = await request.body()
-    server = _get_server()
-    result = await server.process(body, context=current_user_id)
-
-    # StreamingResult → SSE response
-    if hasattr(result, "json_events"):
-        return StreamingResponse(
-            result,
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-            },
-        )
-
-    # NonStreamingResult → JSON response
-    return Response(
-        content=result.json,
-        media_type="application/json",
+    """Stream a chat response as Server-Sent Events."""
+    return StreamingResponse(
+        stream_chat_response(
+            message=body.message,
+            owner_user_id=current_user_id,
+            conversation_id=body.conversation_id,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
+
+
+@router.get("/conversations")
+async def list_conversations(
+    current_user_id: str = Depends(verify_session_token),
+):
+    """List all conversations for the authenticated user."""
+    return get_conversations(current_user_id)
+
+
+@router.get("/conversations/{conversation_id}/messages")
+async def list_messages(
+    conversation_id: str,
+    current_user_id: str = Depends(verify_session_token),
+):
+    """Load messages for a specific conversation."""
+    result = get_messages(conversation_id, current_user_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return result

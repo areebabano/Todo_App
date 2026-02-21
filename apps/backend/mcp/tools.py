@@ -21,18 +21,22 @@ from apps.backend.services.task_service import TaskService
 from db.session import engine
 
 
-def _task_to_json(task: TaskResponse) -> str:
-    """Serialize a TaskResponse to a JSON string for the AI agent."""
-    return json.dumps(
-        {
-            "id": str(task.id),
-            "title": task.title,
-            "description": task.description,
-            "is_completed": task.is_completed,
-            "created_at": task.created_at.isoformat(),
-            "updated_at": task.updated_at.isoformat(),
-        },
-        indent=2,
+def _format_task_details(task: TaskResponse) -> str:
+    """Format a TaskResponse as a human-readable summary for the AI agent.
+
+    Returns a structured text block so the LLM can craft a
+    conversational reply without leaking raw JSON.
+    """
+    status = "Completed" if task.is_completed else "Active"
+    desc = task.description if task.description else "No description"
+    return (
+        f"Task details:\n"
+        f"  Title: {task.title}\n"
+        f"  Description: {desc}\n"
+        f"  Status: {status}\n"
+        f"  ID: {task.id}\n"
+        f"  Created: {task.created_at.strftime('%b %d, %Y at %I:%M %p')}\n"
+        f"  Updated: {task.updated_at.strftime('%b %d, %Y at %I:%M %p')}"
     )
 
 
@@ -50,13 +54,16 @@ def create_task(
         description: Optional task description (max 500 characters).
 
     Returns:
-        JSON string with the created task details including id, title,
-        description, is_completed, and created_at.
+        Human-readable confirmation with the created task details.
     """
     task_data = TaskCreate(title=title, description=description)
     with Session(engine) as session:
         task = TaskService.create_task(session, task_data, owner_user_id)
-    return _task_to_json(task)
+    desc_part = f' with description "{task.description}"' if task.description else ""
+    return (
+        f'Successfully created task "{task.title}"{desc_part}.\n\n'
+        f"{_format_task_details(task)}"
+    )
 
 
 @mcp.tool()
@@ -75,7 +82,7 @@ def list_tasks(
         offset: Number of tasks to skip for pagination (default 0).
 
     Returns:
-        JSON string with a list of tasks and total count metadata.
+        Human-readable list of tasks with their details and summary counts.
     """
     with Session(engine) as session:
         all_tasks = TaskService.get_tasks_by_owner(
@@ -89,24 +96,24 @@ def list_tasks(
     else:
         filtered = all_tasks
 
-    return json.dumps(
-        {
-            "tasks": [
-                {
-                    "id": str(t.id),
-                    "title": t.title,
-                    "description": t.description,
-                    "is_completed": t.is_completed,
-                    "created_at": t.created_at.isoformat(),
-                    "updated_at": t.updated_at.isoformat(),
-                }
-                for t in filtered
-            ],
-            "total": len(filtered),
-            "status_filter": status_filter,
-        },
-        indent=2,
-    )
+    if not filtered:
+        if status_filter == "active":
+            return "No active tasks found. All tasks are either completed or the user has no tasks yet."
+        elif status_filter == "completed":
+            return "No completed tasks found."
+        return "No tasks found. The user hasn't created any tasks yet."
+
+    lines = [f"Found {len(filtered)} {status_filter} task(s):\n"]
+    for i, t in enumerate(filtered, 1):
+        status = "Completed" if t.is_completed else "Active"
+        desc = f' - {t.description}' if t.description else ""
+        lines.append(f"  {i}. [{status}] {t.title}{desc} (ID: {t.id})")
+
+    active_count = sum(1 for t in all_tasks if not t.is_completed)
+    completed_count = sum(1 for t in all_tasks if t.is_completed)
+    lines.append(f"\nSummary: {active_count} active, {completed_count} completed out of {len(all_tasks)} total.")
+
+    return "\n".join(lines)
 
 
 @mcp.tool()
@@ -125,20 +132,31 @@ def update_task(
         description: New description (max 500 characters). Leave empty to keep current.
 
     Returns:
-        JSON string with the updated task details, or an error message if not found.
+        Human-readable confirmation with updated task details, or an error message.
     """
     try:
         tid = UUID(task_id)
     except ValueError:
-        return json.dumps({"error": f"Invalid task ID: {task_id}"})
+        return f"Error: Invalid task ID '{task_id}'. Please provide a valid task ID."
 
     task_data = TaskUpdate(title=title, description=description)
     with Session(engine) as session:
         task = TaskService.update_task(session, tid, task_data, owner_user_id)
 
     if not task:
-        return json.dumps({"error": "Task not found or not owned by you."})
-    return _task_to_json(task)
+        return "Error: Task not found or you don't have permission to update it."
+
+    changes = []
+    if title:
+        changes.append(f'title to "{title}"')
+    if description:
+        changes.append(f'description to "{description}"')
+    change_text = " and ".join(changes) if changes else "task"
+
+    return (
+        f'Successfully updated {change_text}.\n\n'
+        f"{_format_task_details(task)}"
+    )
 
 
 @mcp.tool()
@@ -153,19 +171,19 @@ def delete_task(
         task_id: UUID of the task to delete.
 
     Returns:
-        JSON confirmation message, or an error if the task was not found.
+        Human-readable confirmation, or an error if the task was not found.
     """
     try:
         tid = UUID(task_id)
     except ValueError:
-        return json.dumps({"error": f"Invalid task ID: {task_id}"})
+        return f"Error: Invalid task ID '{task_id}'. Please provide a valid task ID."
 
     with Session(engine) as session:
         deleted = TaskService.delete_task(session, tid, owner_user_id)
 
     if not deleted:
-        return json.dumps({"error": "Task not found or not owned by you."})
-    return json.dumps({"message": "Task deleted successfully.", "task_id": task_id})
+        return "Error: Task not found or you don't have permission to delete it."
+    return f"Task has been permanently deleted (ID: {task_id})."
 
 
 @mcp.tool()
@@ -180,26 +198,21 @@ def complete_task(
         task_id: UUID of the task to complete.
 
     Returns:
-        JSON confirmation with task title and completion timestamp, or an error.
+        Human-readable confirmation with task title, or an error.
     """
     try:
         tid = UUID(task_id)
     except ValueError:
-        return json.dumps({"error": f"Invalid task ID: {task_id}"})
+        return f"Error: Invalid task ID '{task_id}'. Please provide a valid task ID."
 
     with Session(engine) as session:
         task = TaskService.complete_task(session, tid, owner_user_id)
 
     if not task:
-        return json.dumps({"error": "Task not found or not owned by you."})
-    return json.dumps(
-        {
-            "message": f'Task "{task.title}" marked as completed.',
-            "task_id": str(task.id),
-            "title": task.title,
-            "completed_at": task.updated_at.isoformat(),
-        },
-        indent=2,
+        return "Error: Task not found or you don't have permission to complete it."
+    return (
+        f'Task "{task.title}" has been marked as completed.\n\n'
+        f"{_format_task_details(task)}"
     )
 
 
@@ -208,30 +221,26 @@ def incomplete_task(
     owner_user_id: str,
     task_id: str,
 ) -> str:
-    """Mark a completed task as incomplete.
+    """Mark a completed task as incomplete (reopen it).
 
     Args:
         owner_user_id: The authenticated user's ID.
         task_id: UUID of the task to mark incomplete.
 
     Returns:
-        JSON confirmation with task title, or an error if not found.
+        Human-readable confirmation with task title, or an error.
     """
     try:
         tid = UUID(task_id)
     except ValueError:
-        return json.dumps({"error": f"Invalid task ID: {task_id}"})
+        return f"Error: Invalid task ID '{task_id}'. Please provide a valid task ID."
 
     with Session(engine) as session:
         task = TaskService.incomplete_task(session, tid, owner_user_id)
 
     if not task:
-        return json.dumps({"error": "Task not found or not owned by you."})
-    return json.dumps(
-        {
-            "message": f'Task "{task.title}" marked as incomplete.',
-            "task_id": str(task.id),
-            "title": task.title,
-        },
-        indent=2,
+        return "Error: Task not found or you don't have permission to update it."
+    return (
+        f'Task "{task.title}" has been reopened (marked as incomplete).\n\n'
+        f"{_format_task_details(task)}"
     )

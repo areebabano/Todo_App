@@ -3,6 +3,8 @@ Main FastAPI application for the Todo Web Application backend.
 """
 
 import os
+from contextlib import asynccontextmanager
+
 from dotenv import load_dotenv
 
 # Load .env from project root
@@ -15,13 +17,26 @@ from apps.backend.core.cors import configure_cors
 from apps.backend.core.middleware import add_security_middleware
 from apps.backend.core.rate_limiter import init_rate_limiter
 from apps.backend.mcp.server import mcp
-from apps.backend.services.chat_service import TodoStore, TodoChatKitServer
-from apps.backend.api.v1.endpoints.chat import set_chatkit_server
+from db.session import warmup_db
+
+# Build MCP sub-app so we can wire its lifespan into FastAPI
+_mcp_app = mcp.http_app(path="/")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Run the MCP server's lifespan within FastAPI's lifespan.
+    Also warms up the database connection pool on startup."""
+    warmup_db()
+    async with _mcp_app.lifespan(_mcp_app):
+        yield
+
 
 app = FastAPI(
     title="Todo Web Application API",
     description="REST API for the Todo Web Application",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 init_rate_limiter(app)
@@ -33,13 +48,8 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(tasks.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 
-# Initialize ChatKit server with DB-backed store
-_todo_store = TodoStore()
-_chatkit_server = TodoChatKitServer(store=_todo_store)
-set_chatkit_server(_chatkit_server)
-
 # Mount MCP server (Streamable HTTP transport) for AI agent tool access
-app.mount("/mcp", mcp.http_app())
+app.mount("/mcp", _mcp_app)
 
 
 @app.get("/")

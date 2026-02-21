@@ -31,6 +31,15 @@ export default function TasksPage() {
     loadTasks();
   }, []);
 
+  // Auto-refresh tasks when chatbot performs operations
+  useEffect(() => {
+    function handleChatbotUpdate() {
+      loadTasks();
+    }
+    window.addEventListener("chatbot-task-updated", handleChatbotUpdate);
+    return () => window.removeEventListener("chatbot-task-updated", handleChatbotUpdate);
+  }, []);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (

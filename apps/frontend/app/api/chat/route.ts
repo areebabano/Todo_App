@@ -27,15 +27,9 @@ function extractRawToken(cookieValue: string): string {
 }
 
 /**
- * Proxy ChatKit protocol requests to the FastAPI backend.
+ * Proxy streaming chat requests to the FastAPI backend.
  *
- * ChatKit sends all requests as POST to a single endpoint. The backend
- * ChatKit server handles routing internally based on the request body.
- *
- * This proxy:
- * 1. Extracts the Better Auth session token from httpOnly cookies
- * 2. Forwards it as a Bearer token to the backend
- * 3. Streams SSE responses back to the ChatKit frontend component
+ * POST /api/chat -> POST /api/v1/chat/stream (SSE)
  */
 export async function POST(request: NextRequest) {
   const rawCookieValue = request.cookies.get(
@@ -48,7 +42,7 @@ export async function POST(request: NextRequest) {
 
   const sessionToken = extractRawToken(rawCookieValue);
   const body = await request.text();
-  const url = `${BACKEND_URL}/chat`;
+  const url = `${BACKEND_URL}/chat/stream`;
 
   try {
     const backendRes = await fetch(url, {
@@ -61,10 +55,8 @@ export async function POST(request: NextRequest) {
       cache: "no-store",
     });
 
-    // Check if this is a streaming response (SSE)
     const contentType = backendRes.headers.get("content-type") || "";
     if (contentType.includes("text/event-stream")) {
-      // Stream the SSE response through to the client
       return new Response(backendRes.body, {
         status: backendRes.status,
         headers: {
@@ -76,7 +68,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Non-streaming JSON response
+    // Non-streaming fallback (e.g. error responses)
     const data = await backendRes.text();
     return new NextResponse(data, {
       status: backendRes.status,

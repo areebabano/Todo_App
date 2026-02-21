@@ -13,6 +13,10 @@ const Sidebar = dynamic(() => import("@/components/layout/Sidebar"), {
 const Navbar = dynamic(() => import("@/components/layout/Navbar"), {
   ssr: false,
 });
+const FloatingChatWidget = dynamic(
+  () => import("@/components/chat/FloatingChatWidget"),
+  { ssr: false }
+);
 
 export default function DashboardLayout({
   children,
@@ -29,6 +33,7 @@ export default function DashboardLayout({
           <Navbar onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
           <main className="flex-1 overflow-y-auto">{children}</main>
         </div>
+        <FloatingChatWidget />
       </div>
     </ProtectedRoute>
   );

@@ -1,4 +1,4 @@
-# Agentic Dev Stack - Multi-Agent Web Application Architecture
+﻿# Agentic Dev Stack - Multi-Agent Web Application Architecture
 
 This file defines the agentic architecture and development workflow for transforming the console-based task management application into a modern, multi-user web application with persistent storage. It serves as the single source of truth for agent orchestration, skill usage, and cross-agent collaboration.
 
